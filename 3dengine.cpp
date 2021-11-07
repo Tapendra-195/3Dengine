@@ -37,17 +37,6 @@ private:
 double PI = std::acos(-1);
 cv::Matx31d light_dir;
 
-class vertex{
-  cv::Matx31d v;
-  cv::Matx21d tc;
-  vertex(){
-
-  }
-  vertex(cv::Matx31d v):v(v){}
-  vertex(cv::Matx31d v, cv::Matx21d tc):v(v),tc(tc){
-
-  }
-};
 
 class zBuffer{
 public:
@@ -55,7 +44,7 @@ public:
   zBuffer(){
     for(int i=0;i<400;i++){
       for(int j=0;j<400;j++){
-	z_buffer[i][j]=0;//std::numeric_limits<double>::infinity();
+	z_buffer[i][j]=std::numeric_limits<double>::infinity();
 ;
       }
     }
@@ -63,12 +52,12 @@ public:
   void restart(){
     for(int i=0;i<400;i++){
       for(int j=0;j<400;j++){
-	z_buffer[i][j]=0;//std::numeric_limits<double>::infinity();
+	z_buffer[i][j]=std::numeric_limits<double>::infinity();
       }
     }
   }
   bool compare(double z, int y,int x){
-    if(z>z_buffer[y][x]){
+    if(z<z_buffer[y][x]){
       //std::cout<<"Prev z = "<<z_buffer[i][j]<<" new = "<<z<<std::endl;
       z_buffer[y][x]=z;
       return true;
@@ -79,14 +68,56 @@ public:
 
 zBuffer zb;
 
+class vertex{
+public:
+  double z;
+  cv::Matx31d v; //vertex
+  cv::Matx21d tc; // texture coordinate
+  vertex(){
+  }
+  vertex(cv::Matx31d v):v(v){}
+  vertex(double a, double b, double c){
+    v(0,0)=a;
+    v(1,0)=b;
+    v(2,0)=c;
+    z=1;
+  }
+  vertex(cv::Matx31d v, cv::Matx21d tc):v(v),tc(tc),z(1){}
+
+    void normalize(){
+      if(v(2,0)!=0){
+	v(0,0) /=v(2,0);
+	v(1,0) /=v(2,0);
+	z=v(2,0);
+	v(2,0)=v(2,0); 
+      }
+    }
+
+  vertex operator-(const vertex& v1){
+    vertex vr(v-v1.v,tc);
+    return vr;
+  } 
+
+  vertex operator+(const vertex& v1){
+    vertex vr(v+v1.v,tc);
+    return vr;
+
+  }
+
+  void set_texture_coord(cv::Matx21d t){
+    tc=t;
+  }
+};
+  
+
 class triangle{
   cv::Matx31d n;//normal
 public:
   cv::Matx31d pos;
-  cv::Matx31d p[3];
+  vertex p[3];
   cv::Vec3b color;
   triangle(){}
-  triangle(cv::Matx31d p0,cv::Matx31d p1,cv::Matx31d p2){
+  triangle(vertex p0,vertex p1,vertex p2){
     p[0]=p0;
     p[1]=p1;
     p[2]=p2;
@@ -97,13 +128,13 @@ public:
   
   void set_color(cv::Vec3b c){
     //    for(int i=0;i<3;i++){
-      color=c;
-      // }
+    color=c;
+    // }
   }
   cv::Vec3b get_color(){
     return color;
   }
-  void set(cv::Matx31d p0,cv::Matx31d p1,cv::Matx31d p2){
+  void set(vertex p0,vertex p1,vertex p2){
     p[0]=p0;
     p[1]=p1;
     p[2]=p2;
@@ -114,36 +145,28 @@ public:
   }
   void normalize(){
     for(unsigned i=0;i<3;i++){
-      if(p[i](2,0)!=0){
+      /*if(p[i](2,0)!=0){
 	p[i](0,0) /=p[i](2,0);
 	p[i](1,0) /=p[i](2,0);
-	p[i](2,0) =1.0/p[i](2,0);
-      }
+	p[i](2,0) =p[i](2,0);
+      */
+      p[i].normalize();
+      //}
       //      else{
       //p[i](2,0) =-1;
       //}
     }
   }
-
-  double get_z(float xi, float yi){
-    float fx=10;
-    float fy=10;
-    float a=pos(0,0);//p[0](0,0);
-    float b=pos(1,0);//p[0](1,0);
-    float c=pos(2,0);//p[0](2,0);
-
-    double z=(n(0,0)*a+n(1,0)*b+n(2,0)*c)/((n(0,0)*(xi-200)/fx)+(n(1,0)*(yi-200)/fy)+n(2,0));
-    return z;
-  }
+  
   void scale(float s){
     for(unsigned i=0;i<3;i++){
-      p[i](0,0) =(p[i](0,0)-200)*s+200;
-      p[i](1,0) =(p[i](1,0)-200)*s+200;
+      p[i].v(0,0) =(p[i].v(0,0)-200)*s+200;
+      p[i].v(1,0) =(p[i].v(1,0)-200)*s+200;
     }
   }
   cv::Matx31d find_normal(){
-    cv::Matx31d a = p[2]-p[0];
-    cv::Matx31d b = p[1]-p[0];
+    cv::Matx31d a = p[2].v-p[0].v;
+    cv::Matx31d b = p[1].v-p[0].v;
     //normal is bXa
     double a1 = a(0,0);
     double a2 = a(1,0);
@@ -151,7 +174,9 @@ public:
     double b1 = b(0,0);
     double b2 = b(1,0);
     double b3 = b(2,0);
-    return cv::Matx31d(a2*b3-a3*b2,a3*b1-a1*b3,a1*b2-a2*b1);
+    cv::Matx31d n = cv::Matx31d(a2*b3-a3*b2,a3*b1-a1*b3,a1*b2-a2*b1);
+    float modn = sqrt(n(0,0)*n(0,0)+n(1,0)*n(1,0)+n(2,0)*n(2,0));
+    return n/modn;
   }
   cv::Matx31d get_normal(){
     return n;
@@ -161,103 +186,127 @@ public:
     n=find_normal();
   }
 
-  double area(){
-    double area;
-    float x1 = p[0](0,0);
-    float x2 = p[1](0,0);
-    float x3 = p[2](0,0);
-    float y1 = p[0](1,0);
-    float y2 = p[1](1,0);
-    float y3 = p[2](1,0);
-    return 0.5*(x1*(y2-y3)+x2*(y3-y1)+x3*(y1-y2));
+  void get_u(cv::Matx21d a,cv::Matx21d b,double z1,double z2, double z,cv::Matx21d& u,double s){
+    a=a/z1;
+    b=b/z2;
+    u=a+s*(b-a);
+    u *=z;
   }
+
   
-  void shade(cv::Mat& m, const cv::Matx31d& light_dir){
-    cv::Matx31d p_ysorted[3];
+  void get_zval(float z1, float z2,float us, float u1, float u2, double& zl ){
+    double s=(us-u1)/(u2-u1);
+    zl=(1.0/z1)+s*((1.0/z2)-(1.0/z1));
+    zl=1.0/zl;
+  }
+
+  
+  void shade(cv::Mat& m, const cv::Matx31d& light_dir,const cv::Mat& texture){
+    vertex p_ysorted[3];
     for(unsigned i=0;i<3;i++){
       p_ysorted[i]=p[i];
-      p_ysorted[i](1,0)=std::ceil(p_ysorted[i](1,0)-0.5);
+      p_ysorted[i].v(1,0)=std::ceil(p_ysorted[i].v(1,0)-0.5);
     }
     
     for(int i=0;i<3;i++){
       int left=i/2;
       int right=(i+1)%2+1;
-      if(p_ysorted[left](1,0)>p_ysorted[right](1,0)){
-	cv::Matx31d temp = p_ysorted[right];
+      if(p_ysorted[left].v(1,0)>p_ysorted[right].v(1,0)){
+	vertex temp = p_ysorted[right];
 	p_ysorted[right]=p_ysorted[left];
 	p_ysorted[left]=temp;
       }
     }
     
     //flat top
-    if(p_ysorted[0](1,0)==p_ysorted[1](1,0)){
-      flat_top(p_ysorted[0],p_ysorted[1],p_ysorted[2],m);
+    if(p_ysorted[0].v(1,0)==p_ysorted[1].v(1,0)){
+      flat_top(p_ysorted[0],p_ysorted[1],p_ysorted[2],m,texture);
     }
     
     //flat bottom
-    else if(p_ysorted[1](1,0)==p_ysorted[2](1,0)){
-      flat_bottom(p_ysorted[1],p_ysorted[2],p_ysorted[0],m);
+    else if(p_ysorted[1].v(1,0)==p_ysorted[2].v(1,0)){
+      flat_bottom(p_ysorted[1],p_ysorted[2],p_ysorted[0],m,texture);
     } 
 
     else{
-      cv::Matx31d intersect;
-      intersect(1,0)=p_ysorted[1](1,0);
-      intersect(2,0)=p_ysorted[1](2,0);
-      float x2=p_ysorted[2](0,0);
-      float x1=p_ysorted[0](0,0);
-      float y2=p_ysorted[2](1,0);
-      float y1=p_ysorted[0](1,0);
-      float a = p_ysorted[1](1,0);
+      vertex intersect;
+      intersect.v(1,0)=p_ysorted[1].v(1,0);
       
-      intersect(0,0)=((x2-x1)*(a-y1)/(y2-y1))+x1;
-      flat_bottom(p_ysorted[1],intersect,p_ysorted[0],m);
-      flat_top(p_ysorted[1],intersect,p_ysorted[2],m);
+      float x2=p_ysorted[2].v(0,0);
+      float x1=p_ysorted[0].v(0,0);
+      float y2=p_ysorted[2].v(1,0);
+      float y1=p_ysorted[0].v(1,0);
+      float a = p_ysorted[1].v(1,0);
+
+      double s=(a-y1)/(y2-y1);
+      double z;
+      double z1=p_ysorted[0].v(2,0);
+      double z2=p_ysorted[2].v(2,0);
+      get_zval(z1,z2,a,y1,y2,z);
+      intersect.v(2,0)=z;//p_ysorted[1].v(2,0);
+      cv::Matx21d u;
+      get_u(p_ysorted[0].tc,p_ysorted[2].tc,z1,z2,z,u,s);
+      intersect.tc=u;
+      
+      intersect.v(0,0)=((x2-x1)*(a-y1)/(y2-y1))+x1;
+      flat_bottom(p_ysorted[1],intersect,p_ysorted[0],m,texture);
+      flat_top(p_ysorted[1],intersect,p_ysorted[2],m,texture);
     }
     
   }
 
 
-  void get_zval(float z1, float z2,float us, float u1, float u2, double& zl ){
-    double s=(us-u1)/(u2-u1);
-    //zl=(1.0/z1)+s*((1.0/z2)-(1.0/z1));
-    zl=z1+s*(z2-z1);
-    //    if(zl!=0){
-    // zl=1.0/zl;
-    //}
-  }
   
-  void flat_top( cv::Matx31d a, cv::Matx31d b, cv::Matx31d c ,cv::Mat &m){
-    if(b(0,0)<a(0,0)){
-      cv::Matx31d temp = b;
+  void flat_top( vertex a, vertex b, vertex c ,cv::Mat &m,const cv::Mat& texture){
+    if(b.v(0,0)<a.v(0,0)){
+      vertex temp = b;
       b=a;
       a=temp;
     }
 
-    float m1=(c(0,0)-a(0,0))/(c(1,0)-a(1,0));
-    float m2=(c(0,0)-b(0,0))/(c(1,0)-b(1,0));
+    /*triangle in form
+      a______b
+       \    /
+	\  /
+	 \/
+	 c
+    */
+    float m1=(c.v(0,0)-a.v(0,0))/(c.v(1,0)-a.v(1,0));
+    float m2=(c.v(0,0)-b.v(0,0))/(c.v(1,0)-b.v(1,0));
     
-    for(unsigned j=a(1,0);j<c(1,0);j++){
+    for(unsigned j=a.v(1,0);j<c.v(1,0);j++){
       double z1,z2;
-      get_zval(a(2,0),c(2,0),j,a(1,0),c(1,0),z1);
-      get_zval(b(2,0),c(2,0),j,b(1,0),c(1,0),z2);
+      get_zval(a.v(2,0),c.v(2,0),j,a.v(1,0),c.v(1,0),z1);
+      get_zval(b.v(2,0),c.v(2,0),j,b.v(1,0),c.v(1,0),z2);
       
-      float x_low=F(m1,c,j);
-      float x_high=F(m2,c,j);
+      float x_low=F(m1,c.v,j);
+      float x_high=F(m2,c.v,j);
       x_low=ceil(x_low-0.5);
+
+      cv::Matx21d u1,u2;
+      double s = (j-a.v(1,0))/(c.v(1,0)-a.v(1,0));
+      get_u(a.tc,c.tc,a.v(2,0),c.v(2,0),z1,u1,s);
+      get_u(b.tc,c.tc,b.v(2,0),c.v(2,0),z2,u2,s);
       
       for(int i=x_low;i<x_high;i++){
 	//float s=float(i-x_low)/(x_high-x_low);
 	double z;
 	get_zval(z1,z2,i,x_low,x_high,z);;//(1.0/z1)+s*((1.0/z2)-(1.0/z1));
+	cv::Matx21d u;
+	s=(i-x_low)/(x_high-x_low);
+	get_u(u1,u2,z1,z2,z,u,s);
+	//	u *=z;
+	//std::cout<<"u = "<<u<<std::endl;
 	//	float z = (1.0/a(2,0))+s*((1.0/b(2,0))-(1.0/a(2,0)));
 	//	z=1.0/z;
 	
 	//std::cout<<"z = "<<z<<std::endl;
 	if(zb.compare(z,j,i)){
 	  //	  std::cout<<"return true "<<std::endl;
-	  float dot = get_normal().dot(light_dir)+0.8;
-	  dot=(dot>0)?dot/1.8:0;
-	  cv::Vec3b col = get_color();
+	  float dot = get_normal().dot(light_dir)+3;
+	  dot=dot/4;
+	  //	  std::cout<<"dot = "<<dot<<std::endl;
+	  cv::Vec3b col =  texture.at<cv::Vec3b>(u(1,0),u(0,0));//get_color();
 	  for(unsigned k=0;k<3;k++){
 	    col[k] *=dot;
 	  }
@@ -267,32 +316,49 @@ public:
     }
   }
   
-  void flat_bottom(cv::Matx31d a, cv::Matx31d b, cv::Matx31d c,cv::Mat& m ){
-    if(b(0,0)<a(0,0)){
-      cv::Matx31d temp = b;
+  void flat_bottom(vertex a, vertex b, vertex c,cv::Mat& m,const cv::Mat& texture ){
+    if(b.v(0,0)<a.v(0,0)){
+      vertex temp = b;
       b=a;
       a=temp;
     }
-    
-    float m1=(a(0,0)-c(0,0))/(a(1,0)-c(1,0));
-    float m2=(b(0,0)-c(0,0))/(b(1,0)-c(1,0));
-    for(unsigned j=c(1,0);j<a(1,0);j++){
-      double z1,z2;
-      get_zval(c(2,0),a(2,0),j,c(1,0),a(1,0),z1);
-      get_zval(c(2,0),b(2,0),j,c(1,0),b(1,0),z2);
 
-      float x_low=F(m1,c,j);
-      float x_high=F(m2,c,j);
+    /*
+      c
+     / \
+    /   \
+   a-----b
+     */
+    
+    float m1=(a.v(0,0)-c.v(0,0))/(a.v(1,0)-c.v(1,0));
+    float m2=(b.v(0,0)-c.v(0,0))/(b.v(1,0)-c.v(1,0));
+    for(unsigned j=c.v(1,0);j<a.v(1,0);j++){
+      double z1,z2;
+      get_zval(c.v(2,0),a.v(2,0),j,c.v(1,0),a.v(1,0),z1);
+      get_zval(c.v(2,0),b.v(2,0),j,c.v(1,0),b.v(1,0),z2);
+
+      float x_low=F(m1,c.v,j);
+      float x_high=F(m2,c.v,j);
       x_low=ceil(x_low-0.5);
+
+      cv::Matx21d u1,u2;
+      double s = (j-c.v(1,0))/(a.v(1,0)-c.v(1,0));
+      get_u(c.tc,a.tc,c.v(2,0),a.v(2,0),z1,u1,s);
+      get_u(c.tc,b.tc,c.v(2,0),b.v(2,0),z2,u2,s);
       
       for(int i=x_low;i<x_high;i++){  //64,224,208
 	double z;
 	get_zval(z1,z2,i,x_low,x_high,z);;//(1.0/z1)+s*((1.0/z2)-(1.0/z1));
+
+	cv::Matx21d u;
+	s=(i-x_low)/(x_high-x_low);
+	get_u(u1,u2,z1,z2,z,u,s);
+	
 	//z=1.0/z;
 	if(zb.compare(z,j,i)){
-	  float dot = get_normal().dot(light_dir)+0.8;
-	  dot=(dot>0)?dot/1.8:0;
-	  cv::Vec3b col = get_color();
+	  float dot = get_normal().dot(light_dir)+3;
+	  dot=dot/4;
+	  cv::Vec3b col = texture.at<cv::Vec3b>(u(1,0),u(0,0));//get_color();
 	  for(unsigned k=0;k<3;k++){
 	    col[k] *=dot;
 	  }
@@ -415,16 +481,52 @@ public:
   void set_texture(cv::Mat m){
     texture = m;
   }
-  /*
-  cv::Matx31d get_right_dir(){
-    dir = (get_rotation().t()*cv::Matx31d(1,0,0));
-    dir(1,0)=0;///std::sqrt(dir(0,0)*dir(0,0)+dir(1,0)*dir(1,0)+dir(2,0)*dir(0,0));
-    return dir;
+
+
+  void get_zval(float z1, float z2,float us, float u1, float u2, double& zl ){
+    double s=(us-u1)/(u2-u1);
+    zl=(1.0/z1)+s*((1.0/z2)-(1.0/z1));
+    zl=1.0/zl;
   }
-  */
-  void find_intersect(cv::Matx31d p, cv::Matx31d n, cv::Matx31d u, cv::Matx31d v, cv::Matx31d& x){
+
+  void get_u(cv::Matx21d a,cv::Matx21d b,double z1,double z2, double z,cv::Matx21d& u,double s){
+    a=a/z1;
+    b=b/z2;
+    u=a+s*(b-a);
+    u *=z;
+  }
+
+  
+  void find_intersect(cv::Matx31d p, cv::Matx31d n, vertex v1, vertex v2, vertex& x){
+    cv::Matx31d u=v1.v;
+    cv::Matx31d v=v2.v;
     double t = n.dot(p-u)/n.dot(v-u);
-    x=u+t*(v-u);
+    x.v=u+t*(v-u);
+        //x.set_texture_coord(tu);
+    /*    for(unsigned i=0;i<3;i++){
+      n(i,0)=fabs(n(i,0));
+    }
+    double z;
+    
+    get_zval(v1.v(2,0),v2.v(2,0),n.dot(x.v),n.dot(v1.v),n.dot(v2.v),z);
+    x.v(2,0)=z;*/
+    //double s =; 
+    
+    //    cv::Matx21d ut;
+    //    x.set_texture_coord(v1.tc+t*(v2.tc-v1.tc));
+
+    if(n(2,0)!=1){
+    x.v(2,0)=(1.0/v1.v(2,0))+t*((1.0/v2.v(2,0))-(1.0/v1.v(2,0)));
+    x.v(2,0)=1.0/x.v(2,0);
+
+    cv::Matx21d ut;
+    get_u(v1.tc,v2.tc,v1.v(2,0),v2.v(2,0), x.v(2,0), ut,t);
+    x.tc=ut;//v1.tc+t*(v2.tc-v1.tc);
+    }
+    else{
+      x.tc=v1.tc+t*(v2.tc-v1.tc);
+    }
+    //std::cout<<"text_cooord = "<<v1.tc+t*(v2.tc-v1.tc)<<std::endl;
   }
   
   int clip(const cv::Matx31d n, cv::Matx31d p, triangle t, triangle& t1, triangle& t2){
@@ -438,7 +540,7 @@ public:
     unsigned in[3];
     int n_in=0;
     for(unsigned i=0;i<3;i++){
-      cv::Matx31d u=t.p[i]-p;
+      cv::Matx31d u=t.p[i].v-p;
       float n_dot_u = n(0,0)*u(0,0)+n(1,0)*u(1,0)+n(2,0)*u(2,0);
       if(n_dot_u>=0){in[n_in++]=i;}
       else{in[2-i+n_in]=i;}
@@ -448,12 +550,12 @@ public:
       //find intersection with line from 3rd index to first
       //find intersection with line from second index to first
       //make a triangle with first point as intersection between first index and third, and second point as first index and second and third as first point.
-      cv::Matx31d x0;//lower index one
+      vertex x0;//lower index one
       find_intersect(p,n,t.p[in[0]],t.p[in[2]],x0);
 
-      cv::Matx31d x1;//higher index one
+      vertex x1;//higher index one
       find_intersect(p,n,t.p[in[0]],t.p[in[1]],x1);
-
+      
       if(in[0]==2){
 	t1.set(t.p[in[0]],x1,x0);
 	t1.set_normal(t.get_normal());
@@ -471,10 +573,10 @@ public:
       //make two triangles:
       //first with first index, second index and intersection of second and third
       //second with 
-      cv::Matx31d x0;//lower index one
+      vertex x0;//lower index one
       find_intersect(p,n,t.p[in[2]],t.p[in[0]],x0);
       
-      cv::Matx31d x1;//higher index one
+      vertex x1;//higher index one
       find_intersect(p,n,t.p[in[2]],t.p[in[1]],x1);
       
       if(in[2]==2){
@@ -520,7 +622,7 @@ public:
     //    for(triangle t: m.tris){
     for(unsigned i=0;i<m.tris.size();i++){
       for(unsigned j=0;j<3;j++){
-	m.tris[i].p[j] =r*(m.tris[i].p[j]-tr+cv::Matx31d(0,0,5));
+	m.tris[i].p[j].v =r*(m.tris[i].p[j].v-tr+cv::Matx31d(0,0,5));
       }
       m.tris[i].reevaluate_normal();
       
@@ -542,7 +644,7 @@ public:
     std::vector<triangle>tempt;
     for(triangle t: m.tris){
       triangle t1,t2;
-      int no_in=clip(cv::Matx31d(0,0,1),cv::Matx31d(0,0,1),t,t1,t2);
+      int no_in=clip(cv::Matx31d(0,0,1),cv::Matx31d(0,0,0.3),t,t1,t2);
       if(no_in==1||no_in==3){
 	tempt.push_back(t1);
       }
@@ -557,11 +659,12 @@ public:
     
     for(triangle t: m.tris){
     
-      cv::Matx31d p0 = cam_matrix*t.p[0];
-      cv::Matx31d p1 = cam_matrix*t.p[1];
-      cv::Matx31d p2 = cam_matrix*t.p[2];
-      triangle t1(p0,p1,p2);
-      t1.pos=t.p[0];
+      cv::Matx31d p0 = cam_matrix*t.p[0].v;
+      cv::Matx31d p1 = cam_matrix*t.p[1].v;
+      cv::Matx31d p2 = cam_matrix*t.p[2].v;
+      
+      triangle t1(vertex(p0,t.p[0].tc),vertex(p1,t.p[1].tc),vertex(p2,t.p[2].tc));
+      t1.pos=t.p[0].v;
       t1.set_normal(t.get_normal());
       //t1.reevaluate_normal();
       t1.set_color(t.get_color());
@@ -641,11 +744,12 @@ public:
     
     for(triangle t: m1.tris){
       if(t.get_normal().dot(t.pos)<0){
-	t.shade(img,light_dir);
-	//if(true){
-	//	line(img, cv::Point2f(t.p[0](0,0),t.p[0](1,0)),cv::Point2f(t.p[1](0,0),t.p[1](1,0)),cv::Scalar(0,255,230),1);
-	//line(img, cv::Point2f(t.p[0](0,0),t.p[0](1,0)),cv::Point2f(t.p[2](0,0),t.p[2](1,0)),cv::Scalar(0,255,230),1);
-	//line(img, cv::Point2f(t.p[1](0,0),t.p[1](1,0)),cv::Point2f(t.p[2](0,0),t.p[2](1,0)),cv::Scalar(0,255,230),1);
+	t.shade(img,light_dir,texture);
+	if(false){
+	  line(img, cv::Point2f(t.p[0].v(0,0),t.p[0].v(1,0)),cv::Point2f(t.p[1].v(0,0),t.p[1].v(1,0)),cv::Scalar(0,255,230),1);
+	  line(img, cv::Point2f(t.p[0].v(0,0),t.p[0].v(1,0)),cv::Point2f(t.p[2].v(0,0),t.p[2].v(1,0)),cv::Scalar(0,255,230),1);
+	  line(img, cv::Point2f(t.p[1].v(0,0),t.p[1].v(1,0)),cv::Point2f(t.p[2].v(0,0),t.p[2].v(1,0)),cv::Scalar(0,255,230),1);
+      }
       }
     }
     /*
@@ -688,7 +792,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata){
     float delx = x-prex;
     float dely = y-prey;
     if(delx!=0){
-      c.y+=(delx/400.)*800;
+      c.y+=(delx/400.)*400;//800;
       prex=x;
       changed=true;
       
@@ -713,30 +817,27 @@ int main(){
   cv::Mat txture=imread("texture.jpg",cv::IMREAD_COLOR);
   std::vector<triangle> t = {
 			     //F
-			     triangle(cv::Matx31d(-1,-1,-1), cv::Matx31d(1,-1,-1), cv::Matx31d(-1,1,-1)),
-			     triangle(cv::Matx31d(-1,1,-1), cv::Matx31d(1,-1,-1), cv::Matx31d(1,1,-1)),
+			     triangle(vertex(cv::Matx31d(-1,-1,-1),cv::Matx21d(0,100)), vertex(cv::Matx31d(1,-1,-1),cv::Matx21d(261,100)), vertex(cv::Matx31d(-1,1,-1),cv::Matx21d(0,0))),
+			     //		     triangle(vertex(-1,1,-1), vertex(1,-1,-1), vertex(1,1,-1)),
+			     triangle(vertex(cv::Matx31d(-1,1,-1),cv::Matx21d(0,0)), vertex(cv::Matx31d(1,-1,-1),cv::Matx21d(261,100)), vertex(cv::Matx31d(1,1,-1),cv::Matx21d(261,0))),
 			     //B
-			     triangle(cv::Matx31d(1,-1,1), cv::Matx31d(-1,-1,1), cv::Matx31d(1,1,1)),
-			     triangle(cv::Matx31d(1,1,1), cv::Matx31d(-1,-1,1), cv::Matx31d(-1,1,1)),
+			     triangle(vertex(cv::Matx31d(1,-1,1),cv::Matx21d(0,100)), vertex(cv::Matx31d(-1,-1,1),cv::Matx21d(261,100)), vertex(cv::Matx31d(1,1,1),cv::Matx21d(0,0))),
+			     triangle(vertex(cv::Matx31d(1,1,1),cv::Matx21d(0,0)), vertex(cv::Matx31d(-1,-1,1),cv::Matx21d(261,100)), vertex(cv::Matx31d(-1,1,1),cv::Matx21d(261,0))),
 			     //L
-			     triangle(cv::Matx31d(-1,-1,1), cv::Matx31d(-1,-1,-1), cv::Matx31d(-1,1,1)),
-			     triangle(cv::Matx31d(-1,1,1), cv::Matx31d(-1,-1,-1), cv::Matx31d(-1,1,-1)),
+			     triangle(vertex(cv::Matx31d(-1,-1,1),cv::Matx21d(0,100)), vertex(cv::Matx31d(-1,-1,-1),cv::Matx21d(261,100)), vertex(cv::Matx31d(-1,1,1),cv::Matx21d(0,0))),
+			     triangle(vertex(cv::Matx31d(-1,1,1),cv::Matx21d(0,0)), vertex(cv::Matx31d(-1,-1,-1),cv::Matx21d(261,100)), vertex(cv::Matx31d(-1,1,-1),cv::Matx21d(261,0))),
 			     //R
-			     triangle(cv::Matx31d(1,-1,-1), cv::Matx31d(1,-1,1), cv::Matx31d(1,1,-1)),
-			     triangle(cv::Matx31d(1,1,-1), cv::Matx31d(1,-1,1), cv::Matx31d(1,1,1)),
+			     triangle(vertex(cv::Matx31d(1,-1,-1),cv::Matx21d(0,100)), vertex(cv::Matx31d(1,-1,1),cv::Matx21d(261,100)), vertex(cv::Matx31d(1,1,-1),cv::Matx21d(0,0))),
+			     triangle(vertex(cv::Matx31d(1,1,-1),cv::Matx21d(0,0)), vertex(cv::Matx31d(1,-1,1),cv::Matx21d(261,100)), vertex(cv::Matx31d(1,1,1),cv::Matx21d(261,0))),
 			     //U
-			     //triangle(cv::Matx31d(-1,-1,1), cv::Matx31d(1,-1,1), cv::Matx31d(-1,-1,-1)),
-			     //triangle(cv::Matx31d(-1,-1,-1), cv::Matx31d(1,-1,1), cv::Matx31d(1,-1,-1)),
+			     //triangle(vertex(-1,-1,1), vertex(1,-1,1), vertex(-1,-1,-1)),
+			     //triangle(vertex(-1,-1,-1), vertex(1,-1,1), vertex(1,-1,-1)),
 			     //D
-			     //triangle(cv::Matx31d(-1,1,-1), cv::Matx31d(1,1,-1), cv::Matx31d(-1,1,1)),
-			     //triangle(cv::Matx31d(-1,1,1), cv::Matx31d(1,1,-1), cv::Matx31d(1,1,1))
+			     //triangle(vertex(-1,1,-1), vertex(1,1,-1), vertex(-1,1,1)),
+			     //triangle(vertex(-1,1,1), vertex(1,1,-1), vertex(1,1,1))
 			     
-  };
-  /*
-  for(unsigned i=0;i<t.size();i++){
-    t[i].set_texture_coord(cv::Matx21d(txture),cv::Matx21d(),cv::Matx21d());
-  }
-  */
+			       };
+  
   
   std::vector<cv::Vec3b> cl ={cv::Vec3b(0,0,200),cv::Vec3b(0,0,200),cv::Vec3b(0,200,0),cv::Vec3b(0,200,0),cv::Vec3b(200,0,0),cv::Vec3b(200,0,0)};
   unsigned col_ind=0;
@@ -750,7 +851,7 @@ int main(){
   
   int max=t.size();
   for(int i=0;i<max;i++){
-    cv::Matx31d ad(4,0,0);
+    vertex ad(4,0,0);
     triangle tr(t[i].p[0]+ad,t[i].p[1]+ad,t[i].p[2]+ad);
     //
     t.push_back(tr);
@@ -758,36 +859,36 @@ int main(){
     tr=triangle(t[i].p[0]-ad,t[i].p[1]-ad,t[i].p[2]-ad);
     tr.set_color(cv::Vec3b(200,0,0));
     t.push_back(tr);
-    ad=cv::Matx31d(0,2,0);
+    ad=vertex(0,2,0);
     tr=triangle(t[i].p[0]-ad,t[i].p[1]-ad,t[i].p[2]-ad);
     t.push_back(tr);
-    ad=cv::Matx31d(0,4,0);
+    ad=vertex(0,4,0);
     tr=triangle(t[i].p[0]-ad,t[i].p[1]-ad,t[i].p[2]-ad);
     t.push_back(tr);
-    ad=cv::Matx31d(4,2,-4);
+    ad=vertex(4,2,-4);
     tr=triangle(t[i].p[0]-ad,t[i].p[1]-ad,t[i].p[2]-ad);
     t.push_back(tr);
-    /*    ad=cv::Matx31d(4,0,-1);
-    tr=triangle(t[i].p[0]-ad,t[i].p[1]-ad,t[i].p[2]-ad);
-    t.push_back(tr);*/
-  } 
-
-  t.push_back(triangle(cv::Matx31d(-1,-5,1), cv::Matx31d(1,-5,1), cv::Matx31d(-1,-5,-1)));
-  t.push_back(triangle(cv::Matx31d(-1,-5,-1), cv::Matx31d(1,-5,1), cv::Matx31d(1,-5,-1)));
-  t.push_back(triangle(cv::Matx31d(3,-1,1), cv::Matx31d(5,-1,1), cv::Matx31d(3,-1,-1)));
-  t.push_back(triangle(cv::Matx31d(3,-1,-1), cv::Matx31d(5,-1,1), cv::Matx31d(5,-1,-1)));
-  t.push_back(triangle(cv::Matx31d(-5,-3,5), cv::Matx31d(-3,-3,5), cv::Matx31d(-5,-3,3)));
-  t.push_back(triangle(cv::Matx31d(-5,-3,3), cv::Matx31d(-3,-3,5), cv::Matx31d(-3,-3,3)));
-			   
-
+    
+    }
+  		     
+  t.push_back(triangle(vertex(cv::Matx31d(-1,-5,1), cv::Matx21d(0,100)), vertex(cv::Matx31d(1,-5,1),cv::Matx21d(100,100)), vertex(cv::Matx31d(-1,-5,-1),cv::Matx21d(0,0))));
+  t.push_back(triangle(vertex(cv::Matx31d(-1,-5,-1),cv::Matx21d(0,0)), vertex(cv::Matx31d(1,-5,1),cv::Matx21d(100,100)), vertex(cv::Matx31d(1,-5,-1),cv::Matx21d(100,0))));
+    t.push_back(triangle(vertex(cv::Matx31d(3,-1,1),cv::Matx21d(0,100)), vertex(cv::Matx31d(5,-1,1),cv::Matx21d(100,100)), vertex(cv::Matx31d(3,-1,-1),cv::Matx21d(0,0))));
+  t.push_back(triangle(vertex(cv::Matx31d(3,-1,-1),cv::Matx21d(0,0)), vertex(cv::Matx31d(5,-1,1),cv::Matx21d(100,100)), vertex(cv::Matx31d(5,-1,-1),cv::Matx21d(100,0))));
+  t.push_back(triangle(vertex(cv::Matx31d(-5,-3,5),cv::Matx21d(0,100)), vertex(cv::Matx31d(-3,-3,5),cv::Matx21d(100,100)), vertex(cv::Matx31d(-5,-3,3),cv::Matx21d(0,0))));
+  t.push_back(triangle(vertex(cv::Matx31d(-5,-3,3),cv::Matx21d(0,0)), vertex(cv::Matx31d(-3,-3,5),cv::Matx21d(100,100)), vertex(cv::Matx31d(-3,-3,3),cv::Matx21d(100,0))));
+  			   
+			     
   
-  for(int i=-8;i<9;i++){
-    for(int j=-8;j<9;j++){
+  for(int i=-6;i<6;i++){
+    for(int j=-6;j<6;j++){
       //if(i==-1&&j==-1)continue;
-      triangle tr=triangle(cv::Matx31d(i,1.1,j),cv::Matx31d(i,1.1,j+1),cv::Matx31d(i+1,1.1,j+1));
-      triangle tr1=triangle(cv::Matx31d(i,1.1,j),cv::Matx31d(i+1,1.1,j+1),cv::Matx31d(i+1,1.1,j));
-      //triangle tr=triangle(cv::Matx31d(i,1,j),cv::Matx31d(i,1,j+1),cv::Matx31d(i+1,1,j+1));
-      //triangle tr1=triangle(cv::Matx31d(i,1,j),cv::Matx31d(i+1,1,j+1),cv::Matx31d(i+1,1,j));
+      triangle tr=triangle(vertex(cv::Matx31d(i,1,j),cv::Matx21d(0,430)),vertex(cv::Matx31d(i,1,j+1),cv::Matx21d(100,430)),vertex(cv::Matx31d(i+1,1,j+1),cv::Matx21d(0,330)));
+      triangle tr1=triangle(vertex(cv::Matx31d(i,1,j),cv::Matx21d(0,330)),vertex(cv::Matx31d(i+1,1,j+1),cv::Matx21d(100,430)),vertex(cv::Matx31d(i+1,1,j),cv::Matx21d(100,330)));
+      //triangle tr=triangle(vertex(cv::Matx31d(i,1.1,j),cv::Matx21d(0,300)),vertex(cv::Matx31d(i,1.1,j+1),cv::Matx21d(100,300)),vertex(cv::Matx31d(i+1,1.1,j+1),cv::Matx21d(0,200)));
+      //triangle tr1=triangle(vertex(cv::Matx31d(i,1.1,j),cv::Matx21d(0,200)),vertex(cv::Matx31d(i+1,1.1,j+1),cv::Matx21d(100,300)),vertex(cv::Matx31d(i+1,1.1,j),cv::Matx21d(100,200)));
+      //triangle tr=triangle(vertex(i,1,j),vertex(i,1,j+1),vertex(i+1,1,j+1));
+      //triangle tr1=triangle(vertex(i,1,j),vertex(i+1,1,j+1),vertex(i+1,1,j));
 
       tr.set_color(cv::Vec3b(0,0,200));
       tr1.set_color(cv::Vec3b(0,0,200));
