@@ -70,7 +70,6 @@ zBuffer zb;
 
 class vertex{
 public:
-  double z;
   cv::Matx31d v; //vertex
   cv::Matx21d tc; // texture coordinate
   vertex(){
@@ -80,18 +79,16 @@ public:
     v(0,0)=a;
     v(1,0)=b;
     v(2,0)=c;
-    z=1;
   }
-  vertex(cv::Matx31d v, cv::Matx21d tc):v(v),tc(tc),z(1){}
+  vertex(cv::Matx31d v, cv::Matx21d tc):v(v),tc(tc){}
 
-    void normalize(){
-      if(v(2,0)!=0){
-	v(0,0) /=v(2,0);
-	v(1,0) /=v(2,0);
-	z=v(2,0);
-	v(2,0)=v(2,0); 
-      }
+  void normalize(){
+    if(v(2,0)!=0){
+      v(0,0) /=v(2,0);
+      v(1,0) /=v(2,0);
+      v(2,0)=v(2,0); 
     }
+  }
 
   vertex operator-(const vertex& v1){
     vertex vr(v-v1.v,tc);
@@ -101,14 +98,14 @@ public:
   vertex operator+(const vertex& v1){
     vertex vr(v+v1.v,tc);
     return vr;
-
   }
 
   void set_texture_coord(cv::Matx21d t){
     tc=t;
   }
 };
-  
+
+cv::Mat texture=imread("texture.png",cv::IMREAD_COLOR);
 
 class triangle{
   cv::Matx31d n;//normal
@@ -121,16 +118,15 @@ public:
     p[0]=p0;
     p[1]=p1;
     p[2]=p2;
-    n=find_normal();
     color=cv::Vec3b(0,200,0);
+    find_normal();
   }
 
   
   void set_color(cv::Vec3b c){
-    //    for(int i=0;i<3;i++){
     color=c;
-    // }
   }
+  
   cv::Vec3b get_color(){
     return color;
   }
@@ -138,23 +134,13 @@ public:
     p[0]=p0;
     p[1]=p1;
     p[2]=p2;
-    n=find_normal();
   }
   void set_normal(cv::Matx31d normal){
     n=normal;
   }
   void normalize(){
     for(unsigned i=0;i<3;i++){
-      /*if(p[i](2,0)!=0){
-	p[i](0,0) /=p[i](2,0);
-	p[i](1,0) /=p[i](2,0);
-	p[i](2,0) =p[i](2,0);
-      */
       p[i].normalize();
-      //}
-      //      else{
-      //p[i](2,0) =-1;
-      //}
     }
   }
   
@@ -192,16 +178,14 @@ public:
     u=a+s*(b-a);
     u *=z;
   }
-
   
   void get_zval(float z1, float z2,float us, float u1, float u2, double& zl ){
     double s=(us-u1)/(u2-u1);
     zl=(1.0/z1)+s*((1.0/z2)-(1.0/z1));
     zl=1.0/zl;
   }
-
   
-  void shade(cv::Mat& m, const cv::Matx31d& light_dir,const cv::Mat& texture){
+  void shade(cv::Mat& m, const cv::Matx31d& light_dir){
     vertex p_ysorted[3];
     for(unsigned i=0;i<3;i++){
       p_ysorted[i]=p[i];
@@ -220,12 +204,12 @@ public:
     
     //flat top
     if(p_ysorted[0].v(1,0)==p_ysorted[1].v(1,0)){
-      flat_top(p_ysorted[0],p_ysorted[1],p_ysorted[2],m,texture);
+      flat_top(p_ysorted[0],p_ysorted[1],p_ysorted[2],m);
     }
     
     //flat bottom
     else if(p_ysorted[1].v(1,0)==p_ysorted[2].v(1,0)){
-      flat_bottom(p_ysorted[1],p_ysorted[2],p_ysorted[0],m,texture);
+      flat_bottom(p_ysorted[1],p_ysorted[2],p_ysorted[0],m);
     } 
 
     else{
@@ -249,15 +233,15 @@ public:
       intersect.tc=u;
       
       intersect.v(0,0)=((x2-x1)*(a-y1)/(y2-y1))+x1;
-      flat_bottom(p_ysorted[1],intersect,p_ysorted[0],m,texture);
-      flat_top(p_ysorted[1],intersect,p_ysorted[2],m,texture);
+      flat_bottom(p_ysorted[1],intersect,p_ysorted[0],m);
+      flat_top(p_ysorted[1],intersect,p_ysorted[2],m);
     }
     
   }
 
 
   
-  void flat_top( vertex a, vertex b, vertex c ,cv::Mat &m,const cv::Mat& texture){
+  void flat_top( vertex a, vertex b, vertex c ,cv::Mat &m){
     if(b.v(0,0)<a.v(0,0)){
       vertex temp = b;
       b=a;
@@ -301,12 +285,15 @@ public:
 	//	z=1.0/z;
 	
 	//std::cout<<"z = "<<z<<std::endl;
+	
+	cv::Vec3b col =  texture.at<cv::Vec3b>(u(1,0),u(0,0));//get_color();
+	if(col==cv::Vec3b(255,255,255))continue;
 	if(zb.compare(z,j,i)){
 	  //	  std::cout<<"return true "<<std::endl;
 	  float dot = get_normal().dot(light_dir)+3;
 	  dot=dot/4;
 	  //	  std::cout<<"dot = "<<dot<<std::endl;
-	  cv::Vec3b col =  texture.at<cv::Vec3b>(u(1,0),u(0,0));//get_color();
+	  
 	  for(unsigned k=0;k<3;k++){
 	    col[k] *=dot;
 	  }
@@ -316,7 +303,7 @@ public:
     }
   }
   
-  void flat_bottom(vertex a, vertex b, vertex c,cv::Mat& m,const cv::Mat& texture ){
+  void flat_bottom(vertex a, vertex b, vertex c,cv::Mat& m){
     if(b.v(0,0)<a.v(0,0)){
       vertex temp = b;
       b=a;
@@ -355,10 +342,11 @@ public:
 	get_u(u1,u2,z1,z2,z,u,s);
 	
 	//z=1.0/z;
+	cv::Vec3b col = texture.at<cv::Vec3b>(u(1,0),u(0,0));//get_color();
+	if(col==cv::Vec3b(255,255,255))continue;
 	if(zb.compare(z,j,i)){
 	  float dot = get_normal().dot(light_dir)+3;
 	  dot=dot/4;
-	  cv::Vec3b col = texture.at<cv::Vec3b>(u(1,0),u(0,0));//get_color();
 	  for(unsigned k=0;k<3;k++){
 	    col[k] *=dot;
 	  }
@@ -376,13 +364,7 @@ public:
   }
   
 };
-/*
-class 2dtriangle: triangle{
-  2dtriangle(){
 
-  }
-}
-*/
 class mesh{
 public:
   std::vector<triangle> tris;
@@ -390,16 +372,19 @@ public:
   
   };
   mesh( std::vector<triangle> t):tris(t){}
-  /* mesh(){
-	   tris=w
-  */
+
   void set(std::vector<triangle> t){
     tris=t;
   }
   void push(triangle t){
     tris.push_back(t);
   }
-  
+  /*
+  bool is_empty(){
+    if(tris.size()==0){return true;}
+    return false;
+  }
+  */
 };
 
 class cam{
@@ -410,8 +395,10 @@ class cam{
   cv::Matx33d cam_matrix;
   mesh shape;
   cv::Matx31d dir;
+  mesh player;
+  bool walk;
+  unsigned step;
 public:
-  cv::Mat texture;
   float y; //yaw
   float p; //pitch
   //float dy;
@@ -419,8 +406,8 @@ public:
   cv::Matx31d tr;
   cv::Matx33d R;
   cam(){
-    f=10;
-    a=1;
+    f=20;
+    a=0.8;
     cx=200;
     cy=200;
     cam_matrix= cv::Matx33d(f*a, 0, cx,
@@ -428,45 +415,112 @@ public:
 			    0,  0,   1 );
     y=0;
     p=0;
-    calculate_rotation();
-    //dy=0;
-    //dp=0;
-    tr=cv::Matx31d(0,0,0);
+    
+
+    tr=cv::Matx31d(0,0.2,-5);
+    walk=false;
+   
+    std::vector <triangle> tlayer={triangle(vertex(cv::Matx31d(-0.1,-0.2,0),cv::Matx21d(286,0)), vertex(cv::Matx31d(0.1,-0.2,0),cv::Matx21d(365,0)), vertex(cv::Matx31d(-0.1,1-0.2,0),cv::Matx21d(286,160))), triangle(vertex(cv::Matx31d(-0.1,1-0.2,0),cv::Matx21d(286,160)), vertex(cv::Matx31d(0.1,-0.2,0),cv::Matx21d(365,0)), vertex(cv::Matx31d(0.1,1-0.2,0),cv::Matx21d(365,160)))};  
+    
+    mesh plyr;
+    plyr.set(tlayer);
+    set_player(plyr);
+   
+    calculate_rotation();  
   }
   
-  //cv::Matx31d get_translation(){
-  //    return
-  //}
+
   void set_mesh(mesh mes){
     shape=mes;
   }
+  void set_player(mesh mes){
+    player = mes;
+    std::cout<<"setting mesh"<<std::endl;
+  }
+
+  
   void calculate_rotation(){
     double thy = y*PI/180.;
     double thx = -p*PI/180.;
     //    y+=dy;
     // p+=dp;
-    /*    cv::Matx33d r1=cv::Matx33d(cos(thy),  0, -sin(thy),
+    cv::Matx33d r1=cv::Matx33d(cos(thy),  0, -sin(thy),
 			       0,         1, 0,
 			       sin(thy), 0, cos(thy));
     
     cv::Matx33d r2=cv::Matx33d(1,  0,        0,
 			       0, cos(thx), sin(thx),
 			       0, -sin(thx), cos(thx));
-    */
+        
+    /*
     R=cv::Matx33d(cos(thy)         ,0       ,-sin(thy),
 		  sin(thx)*sin(thy),cos(thx),sin(thx)*cos(thy),
 		  cos(thx)*sin(thy),-sin(thx),cos(thx)*cos(thy)
 		  );
-    //return r;//r2*r1;
+		  //return r;//r2*r1;*/
+    R=r2*r1;
+
+    
+    triangle t1=triangle(vertex(cv::Matx31d(-0.1,-0.2,0),cv::Matx21d(286,0)), vertex(cv::Matx31d(0.1,-0.2,0),cv::Matx21d(365,0)), vertex(cv::Matx31d(-0.1,1-0.2,0),cv::Matx21d(286,160)));
+    triangle t2=triangle(vertex(cv::Matx31d(-0.1,1-0.2,0),cv::Matx21d(286,160)), vertex(cv::Matx31d(0.1,-0.2,0),cv::Matx21d(365,0)), vertex(cv::Matx31d(0.1,1-0.2,0),cv::Matx21d(365,160)));  
+    std::vector <triangle> tlayer;
+    tlayer.push_back(t1);
+    tlayer.push_back(t2);
+
+
+      for(unsigned i=0;i<tlayer.size();i++){
+	for(unsigned j=0;j<3;j++){
+	
+	tlayer[i].p[j].tc =player.tris[i].p[j].tc;
+	}
+      }
+      
+      mesh plyr;
+      plyr.set(tlayer);
+      set_player(plyr);
+      
+      for(unsigned i=0;i<player.tris.size();i++){
+	for(unsigned j=0;j<3;j++){
+	  player.tris[i].p[j].v =r2*player.tris[i].p[j].v+cv::Matx31d(0,0,1.7);
+	}
+      }
+      
   }
 
+  void flip_walk(){
+    //keep variable
+    //std::cout<<"previous = "<<walk<<std::endl;
+    if(walk){
+      for(unsigned i=0;i<player.tris.size();i++){
+      for(unsigned j=0;j<3;j++){
+	player.tris[i].p[j].tc(1,0) -=160;
+	//	std::cout<<"failed = "<<player.tris[i].p[j].tc(1,0)<<std::endl;
+      }
+
+    }
+    }
+    else{
+      for(unsigned i=0;i<player.tris.size();i++){
+	for(unsigned j=0;j<3;j++){
+	  player.tris[i].p[j].tc(1,0) +=160;
+	}
+	//      player.tris[i].reevaluate_normal();
+      }
+    }
+    //  
+    walk =!(walk);
+    
+    //std::cout<<"current = "<<walk<<std::endl;
+  }
+  
   cv::Matx33d get_rotation(bool changed=false){
     if(changed){
       calculate_rotation();
     }
     return R;
   }
-  cv::Matx31d get_dir(cv::Matx31d d){
+  cv::Matx31d get_dir(float x, float y, float z){
+    cv::Matx31d d(x,y,z);
     dir = (get_rotation().t()*d);
     if(d(1,0)==0){
       dir(1,0)=0;///std::sqrt(dir(0,0)*dir(0,0)+dir(1,0)*dir(1,0)+dir(2,0)*dir(0,0));
@@ -475,12 +529,10 @@ public:
       dir(0,0)=0;
       dir(2,0)=0;
     }
+    
     return dir;
   }
 
-  void set_texture(cv::Mat m){
-    texture = m;
-  }
 
 
   void get_zval(float z1, float z2,float us, float u1, float u2, double& zl ){
@@ -502,31 +554,17 @@ public:
     cv::Matx31d v=v2.v;
     double t = n.dot(p-u)/n.dot(v-u);
     x.v=u+t*(v-u);
-        //x.set_texture_coord(tu);
-    /*    for(unsigned i=0;i<3;i++){
-      n(i,0)=fabs(n(i,0));
-    }
-    double z;
-    
-    get_zval(v1.v(2,0),v2.v(2,0),n.dot(x.v),n.dot(v1.v),n.dot(v2.v),z);
-    x.v(2,0)=z;*/
-    //double s =; 
-    
-    //    cv::Matx21d ut;
-    //    x.set_texture_coord(v1.tc+t*(v2.tc-v1.tc));
-
-    if(n(2,0)!=1){
-    x.v(2,0)=(1.0/v1.v(2,0))+t*((1.0/v2.v(2,0))-(1.0/v1.v(2,0)));
-    x.v(2,0)=1.0/x.v(2,0);
-
-    cv::Matx21d ut;
-    get_u(v1.tc,v2.tc,v1.v(2,0),v2.v(2,0), x.v(2,0), ut,t);
-    x.tc=ut;//v1.tc+t*(v2.tc-v1.tc);
-    }
-    else{
+       
+    if(n(2,0)==1){
       x.tc=v1.tc+t*(v2.tc-v1.tc);
     }
-    //std::cout<<"text_cooord = "<<v1.tc+t*(v2.tc-v1.tc)<<std::endl;
+    else{
+      x.v(2,0)=(1.0/v1.v(2,0))+t*((1.0/v2.v(2,0))-(1.0/v1.v(2,0)));
+      x.v(2,0)=1.0/x.v(2,0);
+      
+      get_u(v1.tc,v2.tc,v1.v(2,0),v2.v(2,0), x.v(2,0), x.tc,t);
+    }
+   
   }
   
   int clip(const cv::Matx31d n, cv::Matx31d p, triangle t, triangle& t1, triangle& t2){
@@ -534,9 +572,9 @@ public:
     t2.pos=t.pos;
     t1.set_color(t.get_color());
     t2.set_color(t.get_color());
-    //    t2.set_normal(t.get_normal());
+    t1.set_normal(t.get_normal());
+    t2.set_normal(t.get_normal());
     
-    //for(
     unsigned in[3];
     int n_in=0;
     for(unsigned i=0;i<3;i++){
@@ -558,12 +596,10 @@ public:
       
       if(in[0]==2){
 	t1.set(t.p[in[0]],x1,x0);
-	t1.set_normal(t.get_normal());
 	return n_in;
 	  }
       else{
 	t1.set(t.p[in[0]],x0,x1);
-	t1.set_normal(t.get_normal());
 	return n_in;
       }
     }
@@ -582,24 +618,17 @@ public:
       if(in[2]==2){
 	t1.set(x1,t.p[in[1]],t.p[in[0]]);
 	t2.set(x1,t.p[in[0]],x0);
-	//	t1.set(t.p[in[1]],t.p[in[0]],x1);
-	//t2.set(t.p[in[0]],x0,x1);
-	t1.set_normal(t.get_normal());
-	t2.set_normal(t.get_normal());
 	return n_in;
       }
       else{
 	t1.set(t.p[in[0]],t.p[in[1]],x0);
 	t2.set(t.p[in[1]],x1,x0);
-	t1.set_normal(t.get_normal());
-	t2.set_normal(t.get_normal());
 	return n_in;
       }
       
     }
     else if(n_in==3){
       t1.set(t.p[0],t.p[1],t.p[2]);
-      t1.set_normal(t.get_normal());
       return n_in;
     }
     else{
@@ -608,35 +637,30 @@ public:
     
   }
   
-  cv::Mat get_scene(bool r_changed=false){
+  cv::Mat get_scene(bool r_changed=false){			     
     zb.restart();
     double invsqrt2=1.0/sqrt(2);
     light_dir=cv::Matx31d(invsqrt2,-invsqrt2,0);
     cv::Mat img = cv::Mat(400,400,CV_8UC3, cv::Scalar(0,0,0)); 
     mesh m = shape;
+
+    
+
     mesh m1;
     cv::Matx33d r = get_rotation(r_changed);
-
+    
+    
     light_dir=r*(light_dir);
     
-    //    for(triangle t: m.tris){
     for(unsigned i=0;i<m.tris.size();i++){
       for(unsigned j=0;j<3;j++){
-	m.tris[i].p[j].v =r*(m.tris[i].p[j].v-tr+cv::Matx31d(0,0,5));
+	m.tris[i].p[j].v =r*(m.tris[i].p[j].v-tr)+cv::Matx31d(0,0,1.7);
       }
       m.tris[i].reevaluate_normal();
       
-      //m.tris[i].p[0](2,0) +=5;
-      //m.tris[i].p[1](2,0) +=5;
-      //m.tris[i].p[2](2,0) +=5;
-      //cv::Matx31d p1 = cam_matrix*t.p[1];
-      //cv::Matx31d p2 = cam_matrix*t.p[2];
-      //triangle t1(p0,p1,p2);
-      
-      //  m1.push(t1);
     }
-
-    //find normal after here.
+    
+    
     
     //clipping
 
@@ -648,7 +672,7 @@ public:
       if(no_in==1||no_in==3){
 	tempt.push_back(t1);
       }
-      if(no_in==2){
+      else if(no_in==2){
 	tempt.push_back(t1);
 	tempt.push_back(t2);
       }
@@ -656,9 +680,12 @@ public:
     }
 
     m.set(tempt);
+    for(unsigned i=0;i<player.tris.size();i++){
+      player.tris[i].reevaluate_normal();
+      m.tris.push_back(player.tris[i]);
+    }
     
     for(triangle t: m.tris){
-    
       cv::Matx31d p0 = cam_matrix*t.p[0].v;
       cv::Matx31d p1 = cam_matrix*t.p[1].v;
       cv::Matx31d p2 = cam_matrix*t.p[2].v;
@@ -686,11 +713,11 @@ public:
       if(no_in==1||no_in==3){
 	tempt.push_back(t1);
       }
-      if(no_in==2){
+      else if(no_in==2){
 	tempt.push_back(t1);
 	tempt.push_back(t2);
       }
-     
+      
     }
     m1.set(tempt);
 
@@ -701,7 +728,7 @@ public:
       if(no_in==1||no_in==3){
 	tempt.push_back(t1);
       }
-      if(no_in==2){
+      else if(no_in==2){
 	tempt.push_back(t1);
 	tempt.push_back(t2);
       }
@@ -716,7 +743,7 @@ public:
       if(no_in==1||no_in==3){
 	tempt.push_back(t1);
       }
-      if(no_in==2){
+      else if(no_in==2){
 	tempt.push_back(t1);
 	tempt.push_back(t2);
       }
@@ -731,7 +758,7 @@ public:
       if(no_in==1||no_in==3){
 	tempt.push_back(t1);
       }
-      if(no_in==2){
+      else if(no_in==2){
 	tempt.push_back(t1);
 	tempt.push_back(t2);
       }
@@ -744,28 +771,14 @@ public:
     
     for(triangle t: m1.tris){
       if(t.get_normal().dot(t.pos)<0){
-	t.shade(img,light_dir,texture);
-	if(false){
+	t.shade(img,light_dir);
+	/*	if(false){
 	  line(img, cv::Point2f(t.p[0].v(0,0),t.p[0].v(1,0)),cv::Point2f(t.p[1].v(0,0),t.p[1].v(1,0)),cv::Scalar(0,255,230),1);
 	  line(img, cv::Point2f(t.p[0].v(0,0),t.p[0].v(1,0)),cv::Point2f(t.p[2].v(0,0),t.p[2].v(1,0)),cv::Scalar(0,255,230),1);
 	  line(img, cv::Point2f(t.p[1].v(0,0),t.p[1].v(1,0)),cv::Point2f(t.p[2].v(0,0),t.p[2].v(1,0)),cv::Scalar(0,255,230),1);
-      }
-      }
-    }
-    /*
-    cv::Mat A(400, 400, CV_8UC1);
-    for(unsigned k=0;k<400;k++){
-      for(unsigned l=0;l<400;l++){
-	if(zb.z_buffer[k][l]<256){
-	  A.at<uchar>(k,l)=255-zb.z_buffer[k][l];
-	}
-	else{
-	  A.at<uchar>(k,l)=0;
-	}
+	  }*/
       }
     }
-    //imshow("z buffer",A);
-    */
     
     return img;
   }
@@ -781,43 +794,39 @@ mesh m;
 //Timer tmr;
 
 void onMouse(int event, int x, int y, int flags, void* userdata){
-  bool clicked=false;
-  if(set==false && event==0){
-    prex=200;
-    prey=200;
-    set=true;
-  }
-
-  if(set){
-    float delx = x-prex;
-    float dely = y-prey;
+ 
+  float delx = x-200;//prex;
+  float dely = y-200;//prey;
     if(delx!=0){
-      c.y+=(delx/400.)*400;//800;
+      c.y=(delx/200.)*400;
       prex=x;
       changed=true;
       
     }
     if(dely!=0){
-      c.p+=(dely/400.)*85;
+      c.p=(dely/200.)*28;
       prey=y;
       changed=true; 
     }
-  }
-
-  if(changed){
-    scene = c.get_scene(changed);
-  }
-  //tmr.reset();
-  changed=false;
-  imshow("Scene", scene);
+    
+    if(changed){
+      scene = c.get_scene(changed);
+      imshow("Scene", scene);
+      changed=false;
+    }
+    
 }
 
 
 int main(){
-  cv::Mat txture=imread("texture.jpg",cv::IMREAD_COLOR);
+  std::cout<<"setting up t"<<std::endl;
+  prex=200;
+  prey=200;
+ 
+  //cv::Mat txture=
   std::vector<triangle> t = {
 			     //F
-			     triangle(vertex(cv::Matx31d(-1,-1,-1),cv::Matx21d(0,100)), vertex(cv::Matx31d(1,-1,-1),cv::Matx21d(261,100)), vertex(cv::Matx31d(-1,1,-1),cv::Matx21d(0,0))),
+	 		     triangle(vertex(cv::Matx31d(-1,-1,-1),cv::Matx21d(0,100)), vertex(cv::Matx31d(1,-1,-1),cv::Matx21d(261,100)), vertex(cv::Matx31d(-1,1,-1),cv::Matx21d(0,0))),
 			     //		     triangle(vertex(-1,1,-1), vertex(1,-1,-1), vertex(1,1,-1)),
 			     triangle(vertex(cv::Matx31d(-1,1,-1),cv::Matx21d(0,0)), vertex(cv::Matx31d(1,-1,-1),cv::Matx21d(261,100)), vertex(cv::Matx31d(1,1,-1),cv::Matx21d(261,0))),
 			     //B
@@ -837,7 +846,7 @@ int main(){
 			     //triangle(vertex(-1,1,1), vertex(1,1,-1), vertex(1,1,1))
 			     
 			       };
-  
+ 
   
   std::vector<cv::Vec3b> cl ={cv::Vec3b(0,0,200),cv::Vec3b(0,0,200),cv::Vec3b(0,200,0),cv::Vec3b(0,200,0),cv::Vec3b(200,0,0),cv::Vec3b(200,0,0)};
   unsigned col_ind=0;
@@ -880,8 +889,8 @@ int main(){
   			   
 			     
   
-  for(int i=-6;i<6;i++){
-    for(int j=-6;j<6;j++){
+  for(int i=-15;i<15;i++){
+    for(int j=-15;j<15;j++){
       //if(i==-1&&j==-1)continue;
       triangle tr=triangle(vertex(cv::Matx31d(i,1,j),cv::Matx21d(0,430)),vertex(cv::Matx31d(i,1,j+1),cv::Matx21d(100,430)),vertex(cv::Matx31d(i+1,1,j+1),cv::Matx21d(0,330)));
       triangle tr1=triangle(vertex(cv::Matx31d(i,1,j),cv::Matx21d(0,330)),vertex(cv::Matx31d(i+1,1,j+1),cv::Matx21d(100,430)),vertex(cv::Matx31d(i+1,1,j),cv::Matx21d(100,330)));
@@ -899,24 +908,26 @@ int main(){
   
   m.set(t);
   c.set_mesh(m);
-  c.set_texture(txture);
+  //c.set_texture(txture);
+
+  std::cout<<"got after setting mesh = "<<std::endl;
   
  scene = c.get_scene();
  while(true){
    cv::namedWindow("Scene", cv::WINDOW_NORMAL);    
-   //cv::resizeWindow("Scene", 800, 800);
+   cv::resizeWindow("Scene", 1200, 800);
    cv::setMouseCallback("Scene", onMouse);
    char key = cv::waitKey(0);
-   //std::cout<<"waitkey - "<<key<<std::endl;
-   if(key=='a'){ c.tr-=0.2*c.get_dir(cv::Matx31d(1,0,0));  scene = c.get_scene(); }
-   else if(key=='s'){c.tr-=0.2*c.get_dir(cv::Matx31d(0,0,1));  scene = c.get_scene();}
-   else if(key=='d'){c.tr+=0.2*c.get_dir(cv::Matx31d(1,0,0));  scene = c.get_scene();}
-   else if(key=='w'){c.tr+=0.2*c.get_dir(cv::Matx31d(0,0,1));  scene = c.get_scene();}
+   // std::cout<<"key = "<<key<<std::endl;
    
-   else if(key==' '){c.tr+=0.2*c.get_dir(cv::Matx31d(0,-1,0));  scene = c.get_scene();}
-   else if(key='l'){c.tr+=0.2*c.get_dir(cv::Matx31d(0,1,0));  scene = c.get_scene(); }
-   //std::cout<<"tr = "<<c.tr<<std::endl;
-   imshow("Scene",scene);
+   if(key=='a'){ c.tr-=0.2*c.get_dir(1,0,0); c.flip_walk(); scene = c.get_scene(); imshow("Scene",scene);}
+   else if(key=='s'){c.tr-=0.2*c.get_dir(0,0,1); c.flip_walk(); scene = c.get_scene(); imshow("Scene",scene);}
+   else if(key=='d'){c.tr+=0.2*c.get_dir(1,0,0); c.flip_walk(); scene = c.get_scene(); imshow("Scene",scene);}
+   else if(key=='w'){c.tr+=0.2*c.get_dir(0,0,1); c.flip_walk(); scene = c.get_scene(); imshow("Scene",scene);}
+   
+   else if(key==' '){c.tr+=0.2*cv::Matx31d(0,-1,0); scene = c.get_scene(); imshow("Scene",scene);}
+   else if(key=='c'){c.tr+=0.2*cv::Matx31d(0,1,0); scene = c.get_scene(); imshow("Scene",scene);}    
+   
  }  
  
  
